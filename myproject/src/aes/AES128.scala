@@ -2,6 +2,7 @@ package aes
 
 import chisel3._
 import chisel3.util._
+import chisel3.util.random.LFSR
 
 class AESInterface extends Bundle {
     val plaintext  = Input(UInt(128.W))
@@ -10,6 +11,7 @@ class AESInterface extends Bundle {
     val start      = Input(Bool())
     val out        = Output(UInt(128.W))
     val done       = Output(Bool())
+    val dummyOut   = Output(Bool())
 }
 
 object AESConstants {
@@ -58,6 +60,9 @@ class AES128 extends Module {
     val roundCounter = RegInit(0.U(4.W))
     val isRunning    = RegInit(false.B)
     val isDecryptReg = RegInit(false.B)
+
+    val noiseReg = RegInit(0.U(128.W))
+    val randomNoise = Cat(LFSR(32), LFSR(32), LFSR(32), LFSR(32))
 
     def uintToMatrix(in: UInt): Vec[Vec[UInt]] = {
         val m     = Wire(Vec(4, Vec(4, UInt(8.W))))
@@ -156,6 +161,7 @@ class AES128 extends Module {
 		printf("AES round keys: %x\n", io.roundKeys(0))
         printf("AES Start - Initial State (Round 0): %x\n\n", initXor)
     } .elsewhen(isRunning) {
+        noiseReg := noiseReg ^ randomNoise ^ (noiseReg << 3.U) ^ (noiseReg >> 5.U)
         val nextRound = roundCounter + 1.U
         roundCounter := nextRound
 
@@ -184,4 +190,5 @@ class AES128 extends Module {
     io.out  := state
     val isDone = !isRunning && roundCounter === 10.U && !io.start
     io.done := RegNext(isDone, false.B)
+    io.dummyOut := noiseReg.xorR
 }
