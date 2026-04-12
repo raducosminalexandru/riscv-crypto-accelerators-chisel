@@ -35,8 +35,10 @@ class SHA256Padder extends Module {
 
   io.in.ready := (pendingBits === 0.U) && !pendingIsLast && (state === s_recv)
 
+  val maskTable = VecInit(Seq.tabulate(64)(i => ((BigInt(1) << i) - 1).U(64.W)))
+
   when(io.in.valid && io.in.ready) {
-    val mask = (1.U(64.W) << io.in.bits.validBits) - 1.U
+    val mask = maskTable(io.in.bits.validBits)
     pendingData := io.in.bits.data & mask
     pendingBits := io.in.bits.validBits
     pendingIsLast := io.in.bits.isLast
@@ -52,7 +54,7 @@ class SHA256Padder extends Module {
         val shiftDown = pendingBits - takeBits
         val extracted = pendingData >> shiftDown
         
-        val extMask = (1.U(64.W) << takeBits) - 1.U
+        val extMask = maskTable(takeBits)
         val cleanExtracted = extracted & extMask
 
         val shiftUp = spaceLeft - takeBits
@@ -202,37 +204,41 @@ class SHA256 extends Module {
     }
 
     is(s_compress) {
-      val w_t = Wire(UInt(32.W))
-      
-      when(round < 16.U) {
-        w_t := W(round(3, 0))
-      }.otherwise {
-        val w_minus_15 = W((round + 1.U)(3, 0))  
-        val w_minus_7  = W((round + 9.U)(3, 0)) 
-        val w_minus_2  = W((round + 14.U)(3, 0)) 
-        val w_minus_16 = W(round(3, 0))        
+    val w_t = Wire(UInt(32.W))
+    
+    when(round < 16.U) {
+      w_t := W(0)
+    }.otherwise {
+      val w_minus_16 = W(0)
+      val w_minus_15 = W(1)
+      val w_minus_7  = W(9)
+      val w_minus_2  = W(14)        
 
-        w_t := w_minus_16 + sigma0(w_minus_15) + w_minus_7 + sigma1(w_minus_2)
-        W(round(3, 0)) := w_t
-      }
-
-      val temp1 = h + Sigma1(e) + Ch(e, f, g) + K(round) + w_t
-      val temp2 = Sigma0(a) + Maj(a, b, c)
-
-      h := g
-      g := f
-      f := e
-      e := d + temp1
-      d := c
-      c := b
-      b := a
-      a := temp1 + temp2
-
-      round := round + 1.U
-      when(round === 63.U) {
-        state := s_update
-      }
+      w_t := w_minus_16 + sigma0(w_minus_15) + w_minus_7 + sigma1(w_minus_2)
     }
+
+    for (i <- 0 until 15) {
+      W(i) := W(i + 1)
+    }
+    W(15) := w_t
+
+    val temp1 = h + Sigma1(e) + Ch(e, f, g) + K(round) + w_t
+    val temp2 = Sigma0(a) + Maj(a, b, c)
+
+    h := g
+    g := f
+    f := e
+    e := d + temp1
+    d := c
+    c := b
+    b := a
+    a := temp1 + temp2
+
+    round := round + 1.U
+    when(round === 63.U) {
+      state := s_update
+    }
+  }
 
     is(s_update) {
       H(0) := H(0) + a
