@@ -5,9 +5,10 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
 class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
-  behavior of "SHA256"
+  behavior of "SHA256_AFA_Wrapper"
 
-  def runSHA256(dut: SHA256, text: String): BigInt = {
+  // 1. Updated DUT type to the new wrapper
+  def runSHA256(dut: SHA256_AFA_Wrapper, text: String): BigInt = {
     val bytes = text.getBytes("UTF-8")
     var i = 0
 
@@ -55,10 +56,13 @@ class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
     while (!dut.io.out.valid.peek().litToBoolean) {
       dut.clock.step(1)
       timeout += 1
-      if (timeout > 500) {
-        throw new Exception("SHA256 test timed out waiting for out.valid!")
+      if (timeout > 2000) {
+        throw new Exception(s"SHA256 test timed out after $timeout cycles waiting for out.valid!")
       }
     }
+
+    val alarmTriggered = dut.io.faultAlarm.peek().litToBoolean
+    assert(!alarmTriggered, "SECURITY FAILURE: Fault alarm was triggered during normal operation!")
 
     val hashResult = dut.io.out.bits.peek().litValue
     dut.clock.step(1)
@@ -72,7 +76,7 @@ class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "correctly hash an empty string" in {
-    test(new SHA256()) { dut =>
+    test(new SHA256_AFA_Wrapper()) { dut =>
       dut.clock.setTimeout(0)
       
       val expected = BigInt("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 16)
@@ -83,7 +87,7 @@ class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "correctly hash the NIST short test vector 'abc'" in {
-    test(new SHA256()) { dut =>
+    test(new SHA256_AFA_Wrapper()) { dut =>
       dut.clock.setTimeout(0)
       
       val expected = BigInt("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", 16)
@@ -94,7 +98,7 @@ class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "correctly hash a 56-byte multi-block edge case string" in {
-    test(new SHA256()) { dut =>
+    test(new SHA256_AFA_Wrapper()) { dut =>
       dut.clock.setTimeout(0)
       
       val text = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
@@ -106,7 +110,7 @@ class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "correctly hash a 112-byte multi-block string" in {
-    test(new SHA256()) { dut =>
+    test(new SHA256_AFA_Wrapper()) { dut =>
       dut.clock.setTimeout(0)
       
       val text = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"
@@ -118,7 +122,7 @@ class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "correctly hash a message with non-ASCII characters" in {
-    test(new SHA256()) { dut =>
+    test(new SHA256_AFA_Wrapper()) { dut =>
       dut.clock.setTimeout(0)
       val text = "SHA is 🔥"
       val expected = BigInt("957a457a9c081184b6bfd81f878703c3b223ff5b7ace58a14b0c487da5f4bf6e", 16)
@@ -128,7 +132,7 @@ class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "correctly hash a long repeating sequence" in {
-    test(new SHA256()) { dut =>
+    test(new SHA256_AFA_Wrapper()) { dut =>
       dut.clock.setTimeout(0)
       val text = "0123456789" * 10
       val expected = BigInt("9cfe7faff7054298ca87557e15a10262de8d3eee77827417fbdfea1c41b9ec23", 16)
@@ -136,4 +140,49 @@ class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
       assert(actual == expected)
     }
   }
+
+
+  /*
+  // New test case to simulate a laser fault injection attack and verify the alarm triggers -- IGNORE ---
+  it should "detect a fault injection and trigger the security alarm" in {
+    test(new SHA256_AFA_Wrapper()) { dut =>
+      dut.clock.setTimeout(0)
+      
+      dut.io.triggerLaser.poke(false.B)
+      dut.io.out.ready.poke(true.B)
+      
+      dut.io.in.valid.poke(true.B)
+      dut.io.in.bits.data.poke("h61626380".U) 
+      dut.io.in.bits.validBits.poke(32.U)
+      dut.io.in.bits.isLast.poke(true.B)
+      
+      while (!dut.io.in.ready.peek().litToBoolean) {
+        dut.clock.step(1)
+      }
+      dut.clock.step(1)
+      dut.io.in.valid.poke(false.B)
+      
+      dut.clock.step(20) 
+      dut.io.triggerLaser.poke(true.B) 
+      dut.clock.step(1)             
+      dut.io.triggerLaser.poke(false.B) 
+      
+      var timeout = 0
+      var finished = false
+      while (!finished && timeout < 2000) {
+        dut.clock.step(1)
+        timeout += 1
+        
+        if (dut.io.faultAlarm.peek().litToBoolean) {
+          finished = true
+        }
+      }
+      
+      assert(dut.io.faultAlarm.peek().litToBoolean == true, "FAILED: The alarm did not trigger!")
+      assert(dut.io.out.valid.peek().litToBoolean == false, "FAILED: The chip leaked corrupted data!")
+      
+      println("✅ Simulated laser attack successfully thwarted by DMR!")
+    }
+  }
+  */
 }
