@@ -132,7 +132,6 @@ class SHA256 extends Module {
   val io = IO(new Bundle {
     val in = Flipped(Decoupled(new SHA256Input()))
     //val debug_injectFault = Input(Bool()) // For testing AFA attacks only --- IGNORE ---
-     val debug_injectFault = Input(Bool())
     val out = Decoupled(UInt(256.W))
   })
 
