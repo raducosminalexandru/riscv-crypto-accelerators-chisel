@@ -2,6 +2,7 @@ package sha
 
 import chisel3._
 import chisel3.util._
+import chisel3.util.random.LFSR
 
 class SHA256Input extends Bundle {
   val data = UInt(32.W)
@@ -152,6 +153,17 @@ class SHA256 extends Module {
     "h510e527f".U(32.W), "h9b05688c".U(32.W), "h1f83d9ab".U(32.W), "h5be0cd19".U(32.W)
   )
   val H = RegInit(VecInit(H_INIT))
+  
+  val dummy_W = Reg(Vec(16, UInt(32.W)))
+  val dummy_a = RegInit("h01234567".U(32.W))
+  val dummy_b = RegInit("h89abcdef".U(32.W))
+  val dummy_c = RegInit("hdeadbeef".U(32.W))
+  val dummy_d = RegInit("hcafebabe".U(32.W))
+  val dummy_e = RegInit("h1337c0de".U(32.W))
+  val dummy_f = RegInit("h8badf00d".U(32.W))
+  val dummy_g = RegInit("hfeedface".U(32.W))
+  val dummy_h = RegInit("hbaadf00d".U(32.W))
+  val dummy_round = RegInit(0.U(7.W))
 
   val W = Reg(Vec(16, UInt(32.W)))
 
@@ -163,6 +175,8 @@ class SHA256 extends Module {
   val f = Reg(UInt(32.W))
   val g = Reg(UInt(32.W))
   val h = Reg(UInt(32.W))
+
+  
 
   val round = RegInit(0.U(7.W))
   val isLastBlock = RegInit(false.B)
@@ -185,6 +199,9 @@ class SHA256 extends Module {
   
   io.out.bits := Cat(H(0), H(1), H(2), H(3), H(4), H(5), H(6), H(7))
 
+  val randomBits = LFSR(16)
+  val stall = randomBits(0)
+
   switch(state) {
     is(s_idle) {
       when(padder.io.out.valid) {
@@ -204,41 +221,73 @@ class SHA256 extends Module {
     }
 
     is(s_compress) {
-    val w_t = Wire(UInt(32.W))
-    
-    when(round < 16.U) {
-      w_t := W(0)
-    }.otherwise {
-      val w_minus_16 = W(0)
-      val w_minus_15 = W(1)
-      val w_minus_7  = W(9)
-      val w_minus_2  = W(14)        
+      val active_a = Mux(stall, dummy_a, a)
+      val active_b = Mux(stall, dummy_b, b)
+      val active_c = Mux(stall, dummy_c, c)
+      val active_d = Mux(stall, dummy_d, d)
+      val active_e = Mux(stall, dummy_e, e)
+      val active_f = Mux(stall, dummy_f, f)
+      val active_g = Mux(stall, dummy_g, g)
+      val active_h = Mux(stall, dummy_h, h)
+      val active_round = Mux(stall, dummy_round, round)
+      
+      val active_W_0  = Mux(stall, dummy_W(0), W(0))
+      val active_W_1  = Mux(stall, dummy_W(1), W(1))
+      val active_W_9  = Mux(stall, dummy_W(9), W(9))
+      val active_W_14 = Mux(stall, dummy_W(14), W(14))
 
-      w_t := w_minus_16 + sigma0(w_minus_15) + w_minus_7 + sigma1(w_minus_2)
+      val w_t = Wire(UInt(32.W))
+      
+      when(active_round < 16.U) {
+        w_t := active_W_0
+      }.otherwise {
+        w_t := active_W_0 + sigma0(active_W_1) + active_W_9 + sigma1(active_W_14)
+      }
+
+      val temp1 = active_h + Sigma1(active_e) + Ch(active_e, active_f, active_g) + K(active_round(5,0)) + w_t
+      val temp2 = Sigma0(active_a) + Maj(active_a, active_b, active_c)
+
+      val next_a = temp1 + temp2
+      val next_e = active_d + temp1
+      val next_round = active_round + 1.U
+
+      when(!stall) {
+        for (i <- 0 until 15) {
+          W(i) := W(i + 1)
+        }
+        W(15) := w_t
+
+        h := active_g
+        g := active_f
+        f := active_e
+        e := next_e
+        d := active_c
+        c := active_b
+        b := active_a
+        a := next_a
+
+        round := next_round
+        when(next_round === 64.U) {
+          state := s_update
+        }
+      }.otherwise {
+        for (i <- 0 until 15) {
+          dummy_W(i) := dummy_W(i + 1)
+        }
+        dummy_W(15) := w_t
+
+        dummy_h := active_g
+        dummy_g := active_f
+        dummy_f := active_e
+        dummy_e := next_e
+        dummy_d := active_c
+        dummy_c := active_b
+        dummy_b := active_a
+        dummy_a := next_a
+
+        dummy_round := Mux(next_round === 64.U, 0.U, next_round)
+      }
     }
-
-    for (i <- 0 until 15) {
-      W(i) := W(i + 1)
-    }
-    W(15) := w_t
-
-    val temp1 = h + Sigma1(e) + Ch(e, f, g) + K(round) + w_t
-    val temp2 = Sigma0(a) + Maj(a, b, c)
-
-    h := g
-    g := f
-    f := e
-    e := d + temp1
-    d := c
-    c := b
-    b := a
-    a := temp1 + temp2
-
-    round := round + 1.U
-    when(round === 63.U) {
-      state := s_update
-    }
-  }
 
     is(s_update) {
       H(0) := H(0) + a
