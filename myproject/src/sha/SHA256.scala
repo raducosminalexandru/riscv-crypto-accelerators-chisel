@@ -343,6 +343,9 @@ class SHA256_AFA_Wrapper extends Module {
   core2.io.in.valid := io.in.valid
   core2.io.in.bits  := io.in.bits
 
+  dontTouch(core1.io.out)
+  dontTouch(core2.io.out)
+
   /*
   // For testing purposes, we connect the laser trigger to core1 only to simulate AFA attacks --- IGNORE ---
   core1.io.debug_injectFault := io.triggerLaser 
