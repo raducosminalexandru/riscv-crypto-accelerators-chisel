@@ -7,7 +7,7 @@ import chisel3.util.random.LFSR
 class AESInterface extends Bundle {
     val plaintext  = Input(UInt(128.W))
     val isDecrypt  = Input(Bool())
-    val roundKeys  = Input(Vec(11, UInt(128.W)))
+    val key        = Input(UInt(128.W))
     val start      = Input(Bool())
     val out        = Output(UInt(128.W))
     val done       = Output(Bool())
@@ -53,6 +53,53 @@ object AESConstants {
     )
 }
 
+class KeyExpansion extends Module {
+    val io = IO(new Bundle {
+        val key = Input(UInt(128.W))
+        val roundKeys = Output(Vec(11, UInt(128.W)))
+    })
+
+    val sBox = VecInit(AESConstants.sBox)
+
+    def subWord(w: UInt): UInt = {
+        val b3 = sBox(w(31, 24))
+        val b2 = sBox(w(23, 16))
+        val b1 = sBox(w(15, 8))
+        val b0 = sBox(w(7, 0))
+        Cat(b3, b2, b1, b0)
+    }
+
+    def rotWord(w: UInt): UInt = {
+        Cat(w(23, 0), w(31, 24))
+    }
+
+    val rcon = VecInit(Seq(
+        0x01000000L.U(32.W), 0x02000000L.U(32.W), 0x04000000L.U(32.W), 0x08000000L.U(32.W),
+        0x10000000L.U(32.W), 0x20000000L.U(32.W), 0x40000000L.U(32.W), 0x80000000L.U(32.W),
+        0x1B000000L.U(32.W), 0x36000000L.U(32.W)
+    ))
+
+    val words = Wire(Vec(44, UInt(32.W)))
+
+    words(0) := io.key(127, 96)
+    words(1) := io.key(95, 64)
+    words(2) := io.key(63, 32)
+    words(3) := io.key(31, 0)
+
+    for (i <- 4 until 44) {
+        val temp = words(i - 1)
+        if (i % 4 == 0) {
+            words(i) := words(i - 4) ^ subWord(rotWord(temp)) ^ rcon((i / 4) - 1)
+        } else {
+            words(i) := words(i - 4) ^ temp
+        }
+    }
+
+    for (i <- 0 until 11) {
+        io.roundKeys(i) := Cat(words(i * 4), words(i * 4 + 1), words(i * 4 + 2), words(i * 4 + 3))
+    }
+}
+
 class AES128 extends Module {
     val io = IO(new AESInterface)
 
@@ -63,6 +110,10 @@ class AES128 extends Module {
 
     val noiseReg = RegInit(0.U(128.W))
     val randomNoise = Cat(LFSR(32), LFSR(32), LFSR(32), LFSR(32))
+
+    val keyExpander = Module(new KeyExpansion)
+    keyExpander.io.key := io.key
+    val generatedRoundKeys = keyExpander.io.roundKeys
 
     def uintToMatrix(in: UInt): Vec[Vec[UInt]] = {
         val m     = Wire(Vec(4, Vec(4, UInt(8.W))))
@@ -156,24 +207,30 @@ class AES128 extends Module {
         isRunning    := true.B
         roundCounter := 0.U
         isDecryptReg := io.isDecrypt
-        val initXor = io.plaintext ^ Mux(io.isDecrypt, io.roundKeys(10), io.roundKeys(0))
+        val initXor = io.plaintext ^ Mux(io.isDecrypt, generatedRoundKeys(10), generatedRoundKeys(0))
         state := initXor
-		printf("AES round keys: %x\n", io.roundKeys(0))
+        // For debugging purposes, print the initial state and round keys
+        /*
+        printf("AES round keys: %x\n", generatedRoundKeys(0))
         printf("AES Start - Initial State (Round 0): %x\n\n", initXor)
+        */
     } .elsewhen(isRunning) {
         noiseReg := noiseReg ^ randomNoise ^ (noiseReg << 3.U) ^ (noiseReg >> 5.U)
         val nextRound = roundCounter + 1.U
         roundCounter := nextRound
 
-        val currentKey = io.roundKeys(Mux(isDecryptReg, 10.U - nextRound, nextRound))
+        val currentKey = generatedRoundKeys(Mux(isDecryptReg, 10.U - nextRound, nextRound))
 
         when(!isDecryptReg) {
             val sub   = byteSub(state, false)
             val shift = shiftRow(sub)
             val nextState = Mux(nextRound < 10.U, mixColumn(shift) ^ currentKey, shift ^ currentKey)
             state := nextState
+            // For debugging purposes, print the state and round keys at each round
+            /*
             printf("AES Round %d - State: %x\n", roundCounter, state)
             printf("AES Round Keys: %x\n\n", currentKey)
+            */
             when(nextRound === 10.U) { isRunning := false.B }
         } .otherwise {
             val invShift = invShiftRow(state)
@@ -181,9 +238,13 @@ class AES128 extends Module {
             val addKey   = invSub ^ currentKey
             val nextState = Mux(nextRound < 10.U, invMixColumn(addKey), addKey)
             state := nextState
+            // For debugging purposes, print the state and round keys at each round
+            /*
             printf("AES Round %d - State: %x\n", roundCounter, state)
             printf("AES Round Keys: %x\n\n", currentKey)
-            when(nextRound === 10.U) { isRunning := false.B }
+            */
+            when(nextRound === 10.U) { isRunning := false.B 
+            }
         }
     }
 
