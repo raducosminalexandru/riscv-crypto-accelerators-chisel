@@ -8,30 +8,44 @@ class AES128Test extends AnyFlatSpec with ChiselScalatestTester {
   behavior of "AES128"
 
   def runAES(dut: AES128, input: BigInt, key: BigInt): BigInt = {
-    dut.io.key.poke(key.U)
-    
-    dut.io.plaintext.poke(input.U)
-    dut.io.isDecrypt.poke(false.B)
-    dut.io.start.poke(true.B)
-    dut.clock.step(1)
-    dut.io.start.poke(false.B)
+    dut.io.out.ready.poke(true.B)
 
-    while (!dut.io.done.peek().litToBoolean) {
+    while (!dut.io.in.ready.peek().litToBoolean) {
       dut.clock.step(1)
     }
-    val encrypted = dut.io.out.peek().litValue
+
+    dut.io.in.bits.key.poke(key.U)
+    dut.io.in.bits.plaintext.poke(input.U)
+    dut.io.in.bits.isDecrypt.poke(false.B)
+    dut.io.in.valid.poke(true.B)
+    
+    dut.clock.step(1)
+    dut.io.in.valid.poke(false.B)
+
+    while (!dut.io.out.valid.peek().litToBoolean) {
+      dut.clock.step(1)
+    }
+    
+    val encrypted = dut.io.out.bits.peek().litValue
     println(s"Input:     ${input.toString(16).reverse.padTo(32, '0').reverse}")
     println(s"Encrypted: ${encrypted.toString(16).reverse.padTo(32, '0').reverse}")
 
-    dut.io.plaintext.poke(encrypted.U)
-    dut.io.isDecrypt.poke(true.B)
-    dut.io.start.poke(true.B)
     dut.clock.step(1)
-    dut.io.start.poke(false.B)
+
+    while (!dut.io.in.ready.peek().litToBoolean) {
+      dut.clock.step(1)
+    }
+
+    dut.io.in.bits.plaintext.poke(encrypted.U)
+    dut.io.in.bits.isDecrypt.poke(true.B)
+    dut.io.in.valid.poke(true.B)
+    
+    dut.clock.step(1)
+    dut.io.in.valid.poke(false.B)
 
     var timeout = 0
     
-    while (!dut.io.done.peek().litToBoolean) {
+    while (!dut.io.out.valid.peek().litToBoolean) {
         dut.clock.step(1)
         timeout += 1
         if (timeout > 50) {
@@ -39,10 +53,12 @@ class AES128Test extends AnyFlatSpec with ChiselScalatestTester {
         }
     }
     
-    val decrypted = dut.io.out.peek().litValue
+    val decrypted = dut.io.out.bits.peek().litValue
     println(s"Decrypted: ${decrypted.toString(16).reverse.padTo(32, '0').reverse}")
     println("-" * 40)
     
+    dut.clock.step(1)
+
     decrypted
   }
 
@@ -104,31 +120,36 @@ class AES128EncryptionTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new AES128()) { dut =>
       val plaintext = BigInt("3243f6a8885a308d313198a2e0370734", 16)
       val expectedCiphertext = BigInt("3925841d02dc09fbdc118597196a0b32", 16)
-      
-      // We now only need the root key; the module handles the expansion
       val key = BigInt("2b7e151628aed2a6abf7158809cf4f3c", 16)
 
-      dut.io.key.poke(key.U)
-      dut.io.plaintext.poke(plaintext.U)
-      dut.io.isDecrypt.poke(false.B)
-      dut.io.start.poke(true.B)
+      dut.io.out.ready.poke(true.B)
+
+      while (!dut.io.in.ready.peek().litToBoolean) {
+        dut.clock.step(1)
+      }
+
+      dut.io.in.bits.key.poke(key.U)
+      dut.io.in.bits.plaintext.poke(plaintext.U)
+      dut.io.in.bits.isDecrypt.poke(false.B)
+      dut.io.in.valid.poke(true.B)
+      
       dut.clock.step(1)
-      dut.io.start.poke(false.B)
+      dut.io.in.valid.poke(false.B)
 
       var cycles = 0
-      while (!dut.io.done.peek().litToBoolean && cycles < 20) {
+      while (!dut.io.out.valid.peek().litToBoolean && cycles < 20) {
         dut.clock.step(1)
         cycles += 1
       }
 
-      val actualCiphertext = dut.io.out.peek().litValue
+      val actualCiphertext = dut.io.out.bits.peek().litValue
       
       println(s"Plaintext:  ${plaintext.toString(16).reverse.padTo(32, '0').reverse}")
       println(s"Expected:   ${expectedCiphertext.toString(16).reverse.padTo(32, '0').reverse}")
       println(s"Actual:     ${actualCiphertext.toString(16).reverse.padTo(32, '0').reverse}")
 
       assert(actualCiphertext == expectedCiphertext, "Encryption result does not match FIPS-197 vector!")
-      assert(dut.io.done.peek().litToBoolean, "Module failed to assert 'done' signal")
+      assert(dut.io.out.valid.peek().litToBoolean, "Module failed to assert 'out.valid' signal")
     }
   }
 }
