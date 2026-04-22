@@ -3,11 +3,11 @@ package sha
 import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
+import sha.src.SHA256_AFA_Wrapper
 
 class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
   behavior of "SHA256_AFA_Wrapper"
 
-  // 1. Updated DUT type to the new wrapper
   def runSHA256(dut: SHA256_AFA_Wrapper, text: String): BigInt = {
     val bytes = text.getBytes("UTF-8")
     var i = 0
@@ -181,7 +181,7 @@ class SHA256Test extends AnyFlatSpec with ChiselScalatestTester {
       assert(dut.io.faultAlarm.peek().litToBoolean == true, "FAILED: The alarm did not trigger!")
       assert(dut.io.out.valid.peek().litToBoolean == false, "FAILED: The chip leaked corrupted data!")
       
-      println("✅ Simulated laser attack successfully thwarted by DMR!")
+      println("Simulated laser attack successfully thwarted by DMR!")
     }
   }
   */

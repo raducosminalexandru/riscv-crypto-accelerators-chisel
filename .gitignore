@@ -1,19 +1,11 @@
-# --- Build & Tooling ---
 out/
 test_run_dir/
-gen/
-
-# --- Scala & IDE Metadata ---
+gen_files/
 .bsp/
 .metals/
 .vscode/
 .bloop/
-
-# --- Mill specific ---
 .mill-version
-# (Keep mill if it's the script, ignore if it's a directory)
-
-# --- OS & Misc ---
 .DS_Store
 *.log
 *.jou
