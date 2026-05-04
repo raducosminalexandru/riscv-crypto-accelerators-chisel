@@ -16,7 +16,7 @@ class MGF1Output extends Bundle {
   val isLastBlock = Output(Bool())
 }
 
-class MGF1(maxZWords: Int = 32) extends Module {
+class MGF1(maxZWords: Int = 64) extends Module {
   val io = IO(new Bundle {
     val in = new MGF1Input()
     val out = new MGF1Output()

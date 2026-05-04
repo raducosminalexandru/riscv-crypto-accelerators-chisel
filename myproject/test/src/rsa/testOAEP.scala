@@ -14,8 +14,8 @@ class OAEP_Test extends AnyFlatSpec with ChiselScalatestTester {
   val k        = 256
   val maxMLen  = k - 2 * hLen - 2
 
-  it should "encode a message: Chisel-RSA" in {
-    test(new OAEP_Encoding(hLen, k)) { dut =>
+  it should "encode a message: example 1" in {
+    test(new OAEP_Encoding(hLen, k)).withAnnotations(Seq(VerilatorBackendAnnotation)) { dut =>
       dut.clock.setTimeout(0)
 
       val goldenEM = Array(
@@ -61,14 +61,6 @@ class OAEP_Test extends AnyFlatSpec with ChiselScalatestTester {
         if (timeout > 50000) throw new Exception("Encoding timed out!")
       }
 
-      print("Actual EM = Array(")
-      for (i <- 0 until k) {
-        val actualByte = dut.io.out.bits.encodedMessage(i).peek().litValue
-        print(s"$actualByte.U")
-        if (i < k - 1) print(", ")
-      }
-      println(")")
-
       dut.io.out.bits.encodedMessage(0).expect(0.U)
       for (i <- 0 until k) {
         dut.io.out.bits.encodedMessage(i).expect(goldenEM(i))
@@ -76,8 +68,8 @@ class OAEP_Test extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  it should "encode a message: Jesus is Lord" in {
-    test(new OAEP_Encoding(hLen, k)) { dut =>
+  it should "encode a message: example 2" in {
+    test(new OAEP_Encoding(hLen, k)).withAnnotations(Seq(VerilatorBackendAnnotation)) { dut =>
       dut.clock.setTimeout(0)
 
       val goldenEM = Array(
@@ -123,14 +115,6 @@ class OAEP_Test extends AnyFlatSpec with ChiselScalatestTester {
         if (timeout > 50000) throw new Exception("Encoding timed out!")
       }
 
-      print("Actual EM = Array(")
-      for (i <- 0 until k) {
-        val actualByte = dut.io.out.bits.encodedMessage(i).peek().litValue
-        print(s"$actualByte.U")
-        if (i < k - 1) print(", ")
-      }
-      println(")")
-
       dut.io.out.bits.encodedMessage(0).expect(0.U)
       for (i <- 0 until k) {
         dut.io.out.bits.encodedMessage(i).expect(goldenEM(i))
@@ -138,8 +122,8 @@ class OAEP_Test extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  it should "decode a message: Chisel-RSA" in {
-    test(new OAEP_Decoding(hLen, k)) { dut =>
+  it should "decode a message: decode example 1" in {
+    test(new OAEP_Decoding(hLen, k)).withAnnotations(Seq(VerilatorBackendAnnotation)) { dut =>
       dut.clock.setTimeout(0)
 
       val inputEM = Array(
@@ -190,7 +174,7 @@ class OAEP_Test extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  it should "decode a message: Jesus is Lord" in {
+  it should "decode a message: decode example 2" in {
     test(new OAEP_Decoding(hLen, k)) { dut =>
       dut.clock.setTimeout(0)
 
@@ -233,11 +217,9 @@ class OAEP_Test extends AnyFlatSpec with ChiselScalatestTester {
         if (timeout > 50000) throw new Exception("Decoding timed out!")
       }
 
-      // Check for errors and correct length
       dut.io.out.bits.isError.expect(false.B)
       dut.io.out.bits.mLen.expect(expectedMsg.length.U)
 
-      // Validate decoded message bytes
       for (i <- 0 until expectedMsg.length) {
         dut.io.out.bits.message(i).expect((expectedMsg(i) & 0xFF).U)
       }

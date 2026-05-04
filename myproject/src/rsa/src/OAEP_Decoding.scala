@@ -35,7 +35,7 @@ class OAEP_Decoding(val hLen: Int = 32, val k: Int = 256) extends Module {
 
   val state = RegInit(sIdle)
 
-  val mgf1 = Module(new MGF1(64))
+  val mgf1 = Module(new MGF1())
 
   val byte0Reg = RegInit(0.U(8.W))
 
@@ -93,7 +93,7 @@ class OAEP_Decoding(val hLen: Int = 32, val k: Int = 256) extends Module {
       when(io.in.fire) {
         byte0Reg := io.in.bits.encodedMessage(0)
 
-        for (i <- 0 until 8) {
+        for (i <- 0 until (hLen / 4)) {
           maskedSeedWords(i) := Cat(
             io.in.bits.encodedMessage(1 + i * 4),
             io.in.bits.encodedMessage(1 + i * 4 + 1),
@@ -102,21 +102,20 @@ class OAEP_Decoding(val hLen: Int = 32, val k: Int = 256) extends Module {
           )
         }
 
-        for (i <- 0 until dbNumWords - 1) {
-          maskedDBWords(i) := Cat(
-            io.in.bits.encodedMessage(33 + i * 4),
-            io.in.bits.encodedMessage(33 + i * 4 + 1),
-            io.in.bits.encodedMessage(33 + i * 4 + 2),
-            io.in.bits.encodedMessage(33 + i * 4 + 3)
-          )
-        }
+        val dbStartIndex = 1 + hLen
+        for (i <- 0 until dbNumWords) {
+          val byte0Idx = 33 + i * 4
+          val byte1Idx = 33 + i * 4 + 1
+          val byte2Idx = 33 + i * 4 + 2
+          val byte3Idx = 33 + i * 4 + 3
 
-        maskedDBWords(dbNumWords - 1) := Cat(
-          io.in.bits.encodedMessage(253),
-          io.in.bits.encodedMessage(254),
-          io.in.bits.encodedMessage(255),
-          0.U(8.W)
-        )
+          val b0 = if (byte0Idx < k) io.in.bits.encodedMessage(byte0Idx) else 0.U(8.W)
+          val b1 = if (byte1Idx < k) io.in.bits.encodedMessage(byte1Idx) else 0.U(8.W)
+          val b2 = if (byte2Idx < k) io.in.bits.encodedMessage(byte2Idx) else 0.U(8.W)
+          val b3 = if (byte3Idx < k) io.in.bits.encodedMessage(byte3Idx) else 0.U(8.W)
+
+          maskedDBWords(i) := Cat(b0, b1, b2, b3)
+        }
 
         mgf1.io.in.start   := true.B
         mgf1.io.in.maskLen := hLen.U

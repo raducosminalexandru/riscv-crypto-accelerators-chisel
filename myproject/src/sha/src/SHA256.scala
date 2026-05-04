@@ -16,122 +16,10 @@ class SHA256Interface extends Bundle {
   val lastBlock = Output(Bool())
 }
 
-class SHA256Padder extends Module {
-  val io = IO(new SHA256Interface())
-
-  val s_recv :: s_emit_full :: s_append_1 :: s_check_space :: s_emit_overflow :: s_emit_final :: Nil = Enum(6)
-  val state = RegInit(s_recv)
-
-  val buffer = RegInit(0.U(512.W))
-  val bitsInBuffer = RegInit(0.U(10.W))
-  val totalMsgLen = RegInit(0.U(64.W))
-
-  val pendingData = RegInit(0.U(32.W))
-  val pendingBits = RegInit(0.U(6.W))
-  val pendingIsLast = RegInit(false.B)
-
-  io.out.valid := false.B
-  io.out.bits := buffer
-  io.lastBlock := false.B
-
-  io.in.ready := (pendingBits === 0.U) && !pendingIsLast && (state === s_recv)
-
-  val maskTable = VecInit(Seq.tabulate(64)(i => ((BigInt(1) << i) - 1).U(64.W)))
-
-  when(io.in.valid && io.in.ready) {
-    val mask = maskTable(io.in.bits.validBits)
-    pendingData := io.in.bits.data & mask
-    pendingBits := io.in.bits.validBits
-    pendingIsLast := io.in.bits.isLast
-    totalMsgLen := totalMsgLen + io.in.bits.validBits
-  }
-
-  val spaceLeft = 512.U(10.W) - bitsInBuffer
-  val takeBits = Mux(pendingBits > spaceLeft, spaceLeft(5,0), pendingBits)
-
-  switch(state) {
-    is(s_recv) {
-      when(pendingBits > 0.U) {
-        val shiftDown = pendingBits - takeBits
-        val extracted = pendingData >> shiftDown
-        
-        val extMask = maskTable(takeBits)
-        val cleanExtracted = extracted & extMask
-
-        val shiftUp = spaceLeft - takeBits
-        val ext512 = WireDefault(0.U(512.W))
-        ext512 := cleanExtracted
-        buffer := buffer | (ext512 << shiftUp)
-
-        bitsInBuffer := bitsInBuffer + takeBits
-        pendingBits := pendingBits - takeBits
-
-        when(bitsInBuffer + takeBits === 512.U) {
-          state := s_emit_full
-        }
-      }.elsewhen(pendingIsLast) {
-        state := s_append_1
-        pendingIsLast := false.B
-      }
-    }
-
-    is(s_emit_full) {
-      io.out.valid := true.B
-      when(io.out.ready) {
-        buffer := 0.U
-        bitsInBuffer := 0.U
-        state := s_recv 
-      }
-    }
-
-    is(s_append_1) {
-      val shiftAmt = 512.U(10.W) - bitsInBuffer - 1.U
-      val bitOne = WireDefault(1.U(512.W))
-      
-      buffer := buffer | (bitOne << shiftAmt)
-      bitsInBuffer := bitsInBuffer + 1.U
-      state := s_check_space
-    }
-
-    is(s_check_space) {
-      when(bitsInBuffer > 448.U) {
-        state := s_emit_overflow
-      }.otherwise {
-        state := s_emit_final
-      }
-    }
-
-    is(s_emit_overflow) {
-      io.out.valid := true.B
-      when(io.out.ready) {
-        buffer := 0.U 
-        bitsInBuffer := 0.U
-        state := s_emit_final
-      }
-    }
-
-    is(s_emit_final) {
-      val lenExt = WireDefault(0.U(512.W))
-      lenExt := totalMsgLen
-
-      io.out.valid := true.B
-      io.out.bits := buffer | lenExt 
-      io.lastBlock := true.B
-      
-      when(io.out.ready) {
-        buffer := 0.U
-        bitsInBuffer := 0.U
-        totalMsgLen := 0.U
-        state := s_recv
-      }
-    }
-  }
-}
-
 class SHA256 extends Module {
   val io = IO(new Bundle {
     val in = Flipped(Decoupled(new SHA256Input()))
-    //val debug_injectFault = Input(Bool()) // For testing AFA attacks only --- IGNORE ---
+    //val debug_injectFault = Input(Bool()) - For testing AFA attacks only --- IGNORE ---
     val out = Decoupled(UInt(256.W))
   })
 
@@ -176,8 +64,6 @@ class SHA256 extends Module {
   val f = Reg(UInt(32.W))
   val g = Reg(UInt(32.W))
   val h = Reg(UInt(32.W))
-
-  
 
   val round = RegInit(0.U(7.W))
   val isLastBlock = RegInit(false.B)
@@ -325,47 +211,4 @@ class SHA256 extends Module {
       }
     }
   }
-}
-
-class SHA256_AFA_Wrapper extends Module {
-  val io = IO(new Bundle {
-    val in = Flipped(Decoupled(new SHA256Input()))
-    // val triggerLaser = Input(Bool()) // For testing AFA attacks only --- IGNORE ---
-    val out = Decoupled(UInt(256.W))
-    val faultAlarm = Output(Bool()) 
-  })
-
-  val core1 = Module(new SHA256())
-  val core2 = Module(new SHA256())
-
-  core1.io.in.valid := io.in.valid
-  core1.io.in.bits  := io.in.bits
-  core2.io.in.valid := io.in.valid
-  core2.io.in.bits  := io.in.bits
-
-  dontTouch(core1.io.out)
-  dontTouch(core2.io.out)
-
-  /*
-  // For testing purposes, we connect the laser trigger to core1 only to simulate AFA attacks --- IGNORE ---
-  core1.io.debug_injectFault := io.triggerLaser 
-  core2.io.debug_injectFault := false.B  
-  */       
-  
-  io.in.ready := core1.io.in.ready && core2.io.in.ready
-
-  val bothFinished = core1.io.out.valid && core2.io.out.valid
-  val hashesMatch  = core1.io.out.bits === core2.io.out.bits
-
-  io.out.valid := bothFinished && hashesMatch
-  io.out.bits  := core1.io.out.bits
-
-  core1.io.out.ready := io.out.ready && bothFinished
-  core2.io.out.ready := io.out.ready && bothFinished
-
-  val attackDetected = RegInit(false.B)
-  when(bothFinished && !hashesMatch) {
-    attackDetected := true.B
-  }
-  io.faultAlarm := attackDetected
 }

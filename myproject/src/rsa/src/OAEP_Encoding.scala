@@ -122,7 +122,7 @@ class OAEP_Encoding(val hLen: Int = 32, val k: Int = 256) extends Module {
   val sIdle2 :: sFeedSeed :: sFeedDB :: sXOR_DB :: sXOR_Seed :: sDone2 :: Nil = Enum(6)
   val state2 = RegInit(sIdle2)
 
-  val mgf1 = Module(new MGF1(64))
+  val mgf1 = Module(new MGF1())
 
   val mgfWordIdx = RegInit(0.U(32.W))
   val maskBaseWordIdx = RegInit(0.U(32.W))

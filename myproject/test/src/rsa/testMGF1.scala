@@ -10,7 +10,7 @@ class MGF1Test extends AnyFlatSpec with ChiselScalatestTester {
   behavior of "MGF1"
 
   it should "generate mask correctly for a given seed and length: example 1" in {
-    test(new MGF1(32)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new MGF1(32)).withAnnotations(Seq(VerilatorBackendAnnotation)) { dut =>
       dut.clock.setTimeout(0)
       
       dut.io.in.start.poke(true.B)
@@ -73,7 +73,7 @@ class MGF1Test extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "generate mask correctly for a given seed and length: example 2" in {
-    test(new MGF1(32)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new MGF1(32)).withAnnotations(Seq(VerilatorBackendAnnotation)) { dut =>
       dut.clock.setTimeout(0)
       
       dut.io.in.start.poke(true.B)
